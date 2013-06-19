@@ -5,11 +5,13 @@ TBS open source game.
 
 License
 =======
+
 See license.txt
 
 Libs
 ====
-*SFML
-*SFGUI
-*pugixml
-*zlib
+
+1. SFML
+2. SFGUI
+3. pugixml
+4. zlib
