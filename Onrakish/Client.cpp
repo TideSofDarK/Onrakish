@@ -8,7 +8,6 @@
 #include <SFML/Graphics.hpp>
 #include <SFML/Network.hpp>
 #include <SFML/Audio.hpp>
-#include <SFGUI/SFGUI.hpp>
 
 #include <MapLoader.h>
 #include <Config.h>
@@ -89,9 +88,9 @@ int main(int argc, char** argv)
 	/************************************************************************/
 	/* SFML Engine init														*/
 	/************************************************************************/
-	//sf::RenderWindow window(sf::VideoMode(sf::VideoMode::getDesktopMode().width, sf::VideoMode::getDesktopMode().height), "Onrakish: Early Dev", (sf::Style::Titlebar, sf::Style::Close, sf::Style::Fullscreen));
-	sf::RenderWindow renderWindow(sf::VideoMode(1280, 720), "Onrakish: Early Dev", (sf::Style::Titlebar, sf::Style::Close));
-	renderWindow.setFramerateLimit(120);
+	sf::RenderWindow renderWindow(sf::VideoMode(sf::VideoMode::getDesktopMode().width, sf::VideoMode::getDesktopMode().height), "Onrakish: Early Dev", (sf::Style::Titlebar, sf::Style::Close, sf::Style::Fullscreen));
+	//sf::RenderWindow renderWindow(sf::VideoMode(1280, 720), "Onrakish: Early Dev", (sf::Style::Titlebar, sf::Style::Close));
+	renderWindow.setFramerateLimit(240);
 
 	puts(LOG("Created game window with resolution: " + to_string(renderWindow.getSize().x) + "x" + to_string(renderWindow.getSize().y)).c_str());
 
@@ -162,17 +161,6 @@ int main(int argc, char** argv)
 
 	sf::Sound sound;
 	sound.setBuffer(clickBuffer);
-
-	sfg::SFGUI sfgui;
-	sfg::Label::Ptr m_label = sfg::Label::Create( "Hello world!" );
-	sfg::Box::Ptr box( sfg::Box::Create( sfg::Box::VERTICAL, 5.0f ) );
-	box->Pack( m_label );
-
-	sfg::Window::Ptr window( sfg::Window::Create() );
-	window->Add( box );
-
-	sfg::Desktop desktop;
-	desktop.Add( window );
 
 	renderWindow.resetGLStates();
 
@@ -245,8 +233,6 @@ int main(int argc, char** argv)
 			}
 		}
 
-		desktop.Update( clock.restart().asSeconds() );
-
 		
 		/************************************************************************/
 		/* Drawing                                                              */
@@ -266,8 +252,6 @@ int main(int argc, char** argv)
 
 		renderWindow.draw(defaultPointer);
 		renderWindow.draw(selectedTilePointer);
-
-		sfgui.Display(renderWindow);
 
 		renderWindow.display();
 	}

@@ -17,8 +17,8 @@ sf::Vector2i convertMouseToMap(sf::RenderWindow &window, int cameraX, int camera
 
 	sf::Vector2i windowPosition = window.getPosition();
 
-	int dx = mouseX + cameraX - windowPosition.x;
-	int dy = mouseY + cameraY - windowPosition.y;
+	int dx = mouseX + cameraX;
+	int dy = mouseY + cameraY + (TILE_HEIGHT/2);
 
 	map.x = (dy + dx/2)/(TILE_WIDTH/2);
 	map.y = (dy - dx/2)/TILE_HEIGHT;
