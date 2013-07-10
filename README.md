@@ -12,6 +12,5 @@ Libs
 ====
 
 1. SFML
-2. SFGUI
-3. pugixml
-4. zlib
+2. pugixml
+3. zlib
