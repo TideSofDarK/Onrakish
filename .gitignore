@@ -20,7 +20,9 @@
 *.wav
 *.tsx
 *.sdf
+*.opensdf
 *.sln
 *.idb
 *.ilk
 *.filters
+*.zip

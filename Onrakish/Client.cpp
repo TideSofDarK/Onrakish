@@ -1,6 +1,7 @@
 #include <string>
 #include <iostream>
 #include <algorithm>
+#include <list>
 #include "tclap/CmdLine.h"
 
 #include <SFML/System.hpp>
@@ -18,6 +19,7 @@
 #include <Input.h>
 #include <GUI.h>
 #include <TileMapUtil.h>
+#include <Debugger.h>
 
 using namespace TCLAP;
 using namespace std;
@@ -43,6 +45,10 @@ float cameraX, cameraY;
 static Log logger = Log();
 
 #define LOG logger.log
+
+float getFPS(const sf::Time& time) {
+	return (1000000.0f / time.asMicroseconds());
+}
 
 int getRandomInt(int max, int min)
 {
@@ -88,15 +94,16 @@ int main(int argc, char** argv)
 	/************************************************************************/
 	/* SFML Engine init														*/
 	/************************************************************************/
-	sf::RenderWindow renderWindow(sf::VideoMode(sf::VideoMode::getDesktopMode().width, sf::VideoMode::getDesktopMode().height), "Onrakish: Early Dev", (sf::Style::Titlebar, sf::Style::Close, sf::Style::Fullscreen));
-	//sf::RenderWindow renderWindow(sf::VideoMode(1280, 720), "Onrakish: Early Dev", (sf::Style::Titlebar, sf::Style::Close));
-	renderWindow.setFramerateLimit(240);
+	sf::RenderWindow window(sf::VideoMode(sf::VideoMode::getDesktopMode().width, sf::VideoMode::getDesktopMode().height), "Onrakish: Early Dev", (sf::Style::Titlebar, sf::Style::Close, sf::Style::Fullscreen));
+	//sf::RenderWindow window(sf::VideoMode(1280, 720), "Onrakish: Early Dev", (sf::Style::Titlebar, sf::Style::Close));
+	//window.setFramerateLimit(60);
+	window.setVerticalSyncEnabled(true);
 
-	puts(LOG("Created game window with resolution: " + to_string(renderWindow.getSize().x) + "x" + to_string(renderWindow.getSize().y)).c_str());
+	puts(LOG("Created game window with resolution: " + to_string(window.getSize().x) + "x" + to_string(window.getSize().y)).c_str());
 
 	//Camera init
-	sf::View camera(renderWindow.getDefaultView());
-	renderWindow.setView(camera);
+	sf::View camera(window.getDefaultView());
+	window.setView(camera);
 
 
 	/************************************************************************/
@@ -142,9 +149,24 @@ int main(int argc, char** argv)
 
 
 	/************************************************************************/
+	/* Debugger setup														*/
+	/************************************************************************/
+
+	std::list<std::string*> strs;
+	std::string fpsDebugString = "";
+	std::string pointerPositionDebugString = "";
+	std::string selectedTileDebugString = "";
+
+	strs.push_back(&fpsDebugString);
+	strs.push_back(&pointerPositionDebugString);
+	strs.push_back(&selectedTileDebugString);
+	Debugger debug(strs);
+
+
+	/************************************************************************/
 	/* Other variables                                                      */
 	/************************************************************************/
-	sf::Vector2i pixelPos = sf::Mouse::getPosition(renderWindow);
+	sf::Vector2i pixelPos = sf::Mouse::getPosition(window);
 
 	GUI gui = GUI();
 
@@ -156,18 +178,26 @@ int main(int argc, char** argv)
 	sf::Sprite selectedTilePointer = sf::Sprite(pointerTexture);
 	sf::Vector2i selectedTile;
 
+	//Click sound
+
 	sf::SoundBuffer clickBuffer;
 	if (!clickBuffer.loadFromFile("sfx/click.wav")) return -1;
 
 	sf::Sound sound;
 	sound.setBuffer(clickBuffer);
 
-	renderWindow.resetGLStates();
+	//Clocks
+
+	sf::Clock deltaClock;
+	sf::Clock FPSClock;
+	float lastTime = 0;
 
 	while (!quit)
 	{
 		sf::Event event;
 		sf::Clock clock;
+
+		fpsDebugString = "FPS: " + to_string((int)(getFPS(FPSClock.restart())));
 
 		/************************************************************************/
 		/* Network                                                              */
@@ -199,27 +229,9 @@ int main(int argc, char** argv)
 
 
 		/************************************************************************/
-		/* Scrolling                                                            */
-		/************************************************************************/
-		pixelPos = sf::Mouse::getPosition(renderWindow);
-
-		if (pixelPos.x <= (renderWindow.getSize().x / 100) * 5 && pixelPos.x >= 0) 
-			cameraX -= SCROLL_SPEED;
-		if (pixelPos.x >= renderWindow.getSize().x - (renderWindow.getSize().x / 100) * 5 && pixelPos.x <= renderWindow.getSize().x) 
-			cameraX += SCROLL_SPEED;
-		if (pixelPos.y <= (renderWindow.getSize().y / 100) * 9 && pixelPos.y >= 0) 
-			cameraY -= SCROLL_SPEED;
-		if (pixelPos.y >= renderWindow.getSize().y - (renderWindow.getSize().y / 100) * 9 && pixelPos.y <= renderWindow.getSize().y) 
-			cameraY += SCROLL_SPEED;
-
-		camera.reset(sf::FloatRect(cameraX, cameraY, renderWindow.getSize().x, renderWindow.getSize().y));
-		renderWindow.setView(camera);
-
-
-		/************************************************************************/
 		/* Input																*/
 		/************************************************************************/
-		while (renderWindow.pollEvent(event))
+		while (window.pollEvent(event))
 		{
 			if (event.type == sf::Event::Closed)
 				quit = true;
@@ -228,32 +240,58 @@ int main(int argc, char** argv)
 			if (event.type == sf::Event::MouseButtonReleased)
 			{
 				selectedTilePointer.setPosition(defaultPointer.getPosition());
-				selectedTile = convertMouseToMap(renderWindow, cameraX, cameraY);
+				selectedTile = convertMouseToMap(window, cameraX, cameraY);
+				selectedTileDebugString = "Selected tile position: " + to_string(selectedTile.x) + "x" + to_string(selectedTile.y);
 				sound.play();
 			}
 		}
 
 		
+		
 		/************************************************************************/
 		/* Drawing                                                              */
 		/************************************************************************/
-		renderWindow.clear();
-		ml.Draw(renderWindow, false);
+		window.clear();
+		ml.Draw(window, false);
 
 		//for(std::vector<tmx::MapTile>::iterator it = tiles.begin(); it != tiles.end(); ++it)
 		//{
 		//	tmx::MapTile& tile = *it;
 		//}
 
-		sf::Vector2i pointerVector = convertMouseToMap(renderWindow, cameraX, cameraY);
+		sf::Vector2i pointerVector = convertMouseToMap(window, cameraX, cameraY);
 		sf::Vector2f newPos = convertToScreen(pointerVector.x, pointerVector.y);
 		newPos.y -= TILE_HEIGHT / 2;
 		defaultPointer.setPosition(newPos);
 
-		renderWindow.draw(defaultPointer);
-		renderWindow.draw(selectedTilePointer);
+		pointerPositionDebugString = "Pointer position: " + to_string(pointerVector.x) + "x" + to_string(pointerVector.y);
 
-		renderWindow.display();
+		window.draw(defaultPointer);
+		window.draw(selectedTilePointer);
+		debug.draw(window, cameraX, cameraY);
+
+		
+
+
+		/************************************************************************/
+		/* Scrolling                                                            */
+		/************************************************************************/
+		float deltaTime = deltaClock.restart().asSeconds();
+		pixelPos = sf::Mouse::getPosition(window);
+
+		if (pixelPos.x <= 0) 
+			cameraX -= SCROLL_SPEED * deltaTime;
+		if (pixelPos.x >= window.getSize().x - 1) 
+			cameraX += SCROLL_SPEED * deltaTime;
+		if (pixelPos.y <= 0) 
+			cameraY -= SCROLL_SPEED * deltaTime;
+		if (pixelPos.y >= window.getSize().y - 1) 
+			cameraY += SCROLL_SPEED * deltaTime;
+
+		camera.reset(sf::FloatRect(cameraX, cameraY, window.getSize().x, window.getSize().y));
+		window.setView(camera);
+
+		window.display();
 	}
 
 
@@ -264,7 +302,7 @@ int main(int argc, char** argv)
 	disconnectPacket << "disconnect";
 	server.send(disconnectPacket, ipAddress, sendPort);
 
-	renderWindow.close();
+	window.close();
 
 	return EXIT_SUCCESS;
 }
