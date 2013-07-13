@@ -11,10 +11,7 @@ static const int CLIENT_STATE_DISCONNECTED = 4;
 
 struct ClientInfo
 {
-	sf::UdpSocket* socket;
-	unsigned short receivePort;
-	unsigned short sendPort;
-	sf::IpAddress ipAddress;
+	sf::TcpSocket* socket;
 
 	sf::Uint32 id;
 	std::string name;

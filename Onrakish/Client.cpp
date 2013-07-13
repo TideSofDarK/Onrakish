@@ -20,6 +20,7 @@
 #include <GUI.h>
 #include <TileMapUtil.h>
 #include <Debugger.h>
+#include <Message.h>
 
 using namespace TCLAP;
 using namespace std;
@@ -28,13 +29,11 @@ using namespace std;
 bool quit = false;
 
 /* Network variables */ 
-sf::UdpSocket server;
+sf::TcpSocket server;
 sf::Mutex globalMutex;
 ClientInfo clientInfo;
 
 sf::IpAddress ipAddress;
-short unsigned int receivePort;
-short unsigned int sendPort;
 
 /* Game variables */
 GameSession gameSession;
@@ -54,6 +53,16 @@ int getRandomInt(int max, int min)
 {
 	int number = min + (rand() % (int)(max - min + 1));
 	return number;
+}
+
+bool sendMessage(int command)
+{
+	sf::Packet sendPacket;
+	if (sendPacket << command)
+	{
+		server.send(sendPacket);
+		return true;
+	} else return false;
 }
 
 int main(int argc, char** argv)
@@ -78,7 +87,6 @@ int main(int argc, char** argv)
 		//Other variables assign
 		clientInfo.name = nameArg.getValue();
 		ipAddress = ipArg.getValue();
-		receivePort = PORT + 1;
 
 	} catch (ArgException &e)
 	{ cerr << "error: " << e.error() << " for arg " << e.argId() << endl; }
@@ -109,32 +117,31 @@ int main(int argc, char** argv)
 	/************************************************************************/
 	/* Network																*/
 	/************************************************************************/
-	if (server.bind(receivePort) != sf::Socket::Done)
+	if (server.connect(ipAddress, PORT) != sf::Socket::Done)
 	{
 		cout << "Cant connect to " + ipAddress.toString() << endl;
 		return EXIT_FAILURE;
 	}
 
-	//Send client info
-	sf::Packet clientInfoPacket;
-	clientInfoPacket << clientInfo;
-	server.send(clientInfoPacket, ipAddress, PORT);
+	sf::Packet receivePacket;
+	sf::Packet sendPacket;
 
-	//Receive game session
-	sf::Packet gameSessionPacket;
-	server.receive(gameSessionPacket, ipAddress, receivePort);
-	gameSessionPacket >> gameSession;
+	server.receive(receivePacket);
 
-	sf::Packet sendPortPacket;
-	server.receive(sendPortPacket, ipAddress, receivePort);
-	sendPortPacket >> sendPort;
+	int msg;
+	receivePacket >> msg;
 
-	//Reverse ports
-	short unsigned int buffer;
-	buffer = receivePort;
-	receivePort = sendPort;
-	sendPort = buffer;
+	if (msg == MESSAGE_CLIENT_INFO_REQUEST)
+	{
+		sendPacket << clientInfo;
+		server.send(sendPacket);
+	}
 
+	sendMessage(MESSAGE_GAME_SESSION_REQUEST);
+
+	receivePacket.clear();
+	server.receive(receivePacket);
+	receivePacket >> gameSession;
 
 	/************************************************************************/
 	/* Tile map																*/
@@ -245,7 +252,6 @@ int main(int argc, char** argv)
 				sound.play();
 			}
 		}
-
 		
 		
 		/************************************************************************/
@@ -269,8 +275,6 @@ int main(int argc, char** argv)
 		window.draw(defaultPointer);
 		window.draw(selectedTilePointer);
 		debug.draw(window, cameraX, cameraY);
-
-		
 
 
 		/************************************************************************/
@@ -299,8 +303,8 @@ int main(int argc, char** argv)
 	/* Sending disconnect packet and close window							*/
 	/************************************************************************/
 	sf::Packet disconnectPacket;
-	disconnectPacket << "disconnect";
-	server.send(disconnectPacket, ipAddress, sendPort);
+	disconnectPacket << MESSAGE_DISCONNECT;
+	server.send(disconnectPacket);
 
 	window.close();
 
