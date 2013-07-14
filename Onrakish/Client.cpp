@@ -65,6 +65,36 @@ bool sendMessage(int command)
 	} else return false;
 }
 
+void handleServer()
+{
+	//Packets
+	sf::Packet receivePacket;
+	sf::Packet sendPacket;
+
+	while (!quit)
+	{
+		receivePacket.clear();
+		sendPacket.clear();
+
+		if (server.receive(receivePacket) == sf::Socket::Done)
+		{
+			int msg;
+			if (receivePacket >> msg)
+			{
+				switch (msg)
+				{
+				case MESSAGE_START_GAME:
+					gameSession.state = GAME_STATE_GAME;
+					puts(LOG("Game started!").c_str());
+					break;
+				default:
+					break;
+				}
+			}
+		}
+	}
+}
+
 int main(int argc, char** argv)
 {
 	//Command line arguments parse
@@ -117,15 +147,18 @@ int main(int argc, char** argv)
 	/************************************************************************/
 	/* Network																*/
 	/************************************************************************/
+
+	//Connect to server
 	if (server.connect(ipAddress, PORT) != sf::Socket::Done)
 	{
 		cout << "Cant connect to " + ipAddress.toString() << endl;
-		return EXIT_FAILURE;
 	}
 
+	//Packets
 	sf::Packet receivePacket;
 	sf::Packet sendPacket;
 
+	//Receive client info request
 	server.receive(receivePacket);
 
 	int msg;
@@ -133,15 +166,22 @@ int main(int argc, char** argv)
 
 	if (msg == MESSAGE_CLIENT_INFO_REQUEST)
 	{
+		//Send client info
 		sendPacket << clientInfo;
 		server.send(sendPacket);
 	}
 
+	//Request game session
 	sendMessage(MESSAGE_GAME_SESSION_REQUEST);
 
 	receivePacket.clear();
 	server.receive(receivePacket);
 	receivePacket >> gameSession;
+
+	//This thread will communicate with server
+	sf::Thread* thread = 0;
+	thread = new sf::Thread(&handleServer);
+	thread->launch();
 
 	/************************************************************************/
 	/* Tile map																*/
@@ -163,9 +203,11 @@ int main(int argc, char** argv)
 	std::string fpsDebugString = "";
 	std::string pointerPositionDebugString = "";
 	std::string selectedTileDebugString = "";
+	std::string gameStateDebugString = "";
 
 	strs.push_back(&fpsDebugString);
 	strs.push_back(&pointerPositionDebugString);
+	strs.push_back(&gameStateDebugString);
 	strs.push_back(&selectedTileDebugString);
 	Debugger debug(strs);
 
@@ -206,34 +248,8 @@ int main(int argc, char** argv)
 
 		fpsDebugString = "FPS: " + to_string((int)(getFPS(FPSClock.restart())));
 
-		/************************************************************************/
-		/* Network                                                              */
-		/************************************************************************/
-		//if (gameState == -1)
-		//{
-		//	server.setBlocking(true);
-
-		//	sf::Packet gameStateRequestPacket, gameStatePacket;
-		//	gameStateRequestPacket << "gameStateRequest";
-		//	server.send(gameStateRequestPacket, ipAddress, sendPort);
-
-		//	server.receive(gameStatePacket, ipAddress, receivePort);
-		//	gameStatePacket >> gameState;
-
-		//	server.setBlocking(false);
-		//}
-
-		//sf::Packet requestPacket;
-		//string request;
-		//server.receive(requestPacket, ipAddress, receivePort);
-
-		//if (requestPacket >> request)
-		//{
-		//	if (request == "")
-		//	{
-		//	}
-		//}
-
+		if (gameSession.state == GAME_STATE_GAME) gameStateDebugString = "[Game state]";
+		else gameStateDebugString = "[Lobby state]";
 
 		/************************************************************************/
 		/* Input																*/
@@ -244,6 +260,8 @@ int main(int argc, char** argv)
 				quit = true;
 			if(event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Escape)
 				quit = true;
+			if(event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Space)
+				sendMessage(MESSAGE_END_TURN);
 			if (event.type == sf::Event::MouseButtonReleased)
 			{
 				selectedTilePointer.setPosition(defaultPointer.getPosition());
@@ -272,9 +290,9 @@ int main(int argc, char** argv)
 
 		pointerPositionDebugString = "Pointer position: " + to_string(pointerVector.x) + "x" + to_string(pointerVector.y);
 
+		debug.draw(window, cameraX, cameraY);
 		window.draw(defaultPointer);
 		window.draw(selectedTilePointer);
-		debug.draw(window, cameraX, cameraY);
 
 
 		/************************************************************************/
