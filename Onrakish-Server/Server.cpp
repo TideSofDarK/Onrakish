@@ -3,9 +3,13 @@
 #include <algorithm>
 #include "tclap/CmdLine.h"
 
-#include <SFML/Network.hpp>
 #include <SFML/System.hpp>
+#include <SFML/Window.hpp>
+#include <SFML/Graphics.hpp>
+#include <SFML/Network.hpp>
+#include <SFML/Audio.hpp>
 
+#include <MapLoader.h>
 #include <Config.h>
 #include <GameMap.h>
 #include <NetworkGameSession.h>
@@ -87,6 +91,18 @@ void handleClient(ClientInfo *client)
 								++it;
 							}
 						}
+						switch (gameSession.clients->size())
+						{
+						case 0:
+							puts(logger.log("Currently there are no players in lobby").c_str());
+							break;
+						case 1:
+							puts(logger.log("Currently there is one player in lobby").c_str());
+							break;
+						default:
+							puts(logger.log("Currently there are " + to_string(gameSession.clients->size()) + " players in lobby").c_str());
+							break;
+						}
 						break;
 					case MESSAGE_GAME_SESSION_REQUEST:
 						sendPacket << gameSession;
@@ -111,7 +127,7 @@ void handleClient(ClientInfo *client)
 void handleClients(void)
 {
 	selector.add(listener);
-	while(!quit) 
+	while(!quit && gameSession.state == GAME_STATE_LOBBY) 
 	{
 		if (selector.wait())
 		{
@@ -146,6 +162,18 @@ void handleClients(void)
 					thread->launch();
 
 					puts(logger.log("Player " + gameSession.clients->back()->name + " connected: " + newClient->socket->getRemoteAddress().toString() + ", assigned ID: " + to_string(newClient->id)).c_str());
+					switch (gameSession.clients->size())
+					{
+					case 0:
+						puts(logger.log("Currently there are no players in lobby").c_str());
+						break;
+					case 1:
+						puts(logger.log("Currently there is one player in lobby").c_str());
+						break;
+					default:
+						puts(logger.log("Currently there are " + to_string(gameSession.clients->size()) + " players in lobby").c_str());
+						break;
+					}
 				}
 				else
 				{
@@ -188,9 +216,18 @@ int main(int argc, char** argv)
 	sf::err().rdbuf(NULL);
 
 	puts(logger.log("Created game with name \"" + gameSession.gameSessionName + "\"").c_str());
+
+	//Counting players
+	tmx::MapLoader ml("maps/");
+	ml.Load(gameSession.mapFileName);
+
+	puts(logger.log("Map is for " + ml.GetPropertyString("players") + " players").c_str());
+
+	//Listen port
 	puts(logger.log("Listening to: " + to_string(PORT)).c_str());
 	listener.listen(PORT);
 
+	//Run the thread that handles clients
 	sf::Thread* thread = 0;
 	thread = new sf::Thread(&handleClients);
 	thread->launch();
@@ -199,17 +236,29 @@ int main(int argc, char** argv)
 	{
 		string command;
 		cin >> command;
-		if(command == "get")
+		if(command == "getClientInfo")
 		{
 			globalMutex.lock();
-			puts(to_string(gameSession.clients->size()).c_str());
+			switch (gameSession.clients->size())
+			{
+			case 0:
+				puts(logger.log("Currently there are no players").c_str());
+				break;
+			case 1:
+				puts(logger.log("Currently there is one player").c_str());
+				break;
+			default:
+				puts(logger.log("Currently there are " + to_string(gameSession.clients->size()) + " players").c_str());
+				break;
+			}
 			for(std::list<ClientInfo*>::iterator it = gameSession.clients->begin(); it != gameSession.clients->end();	++it)
 			{
 				ClientInfo& client = **it;
+				puts(logger.log(" --> " + client.name + ", ID:" + to_string(client.id)).c_str());
 			}
 			globalMutex.unlock();
 		}
-		else if (command == "start" && gameSession.clients->size() >= 2)
+		else if (command == "start" && gameSession.clients->size() == atoi(ml.GetPropertyString("players").c_str()))
 		{
 			globalMutex.lock();
 			for(std::list<ClientInfo*>::iterator it = gameSession.clients->begin(); it != gameSession.clients->end();	++it)

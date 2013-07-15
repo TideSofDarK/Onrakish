@@ -132,7 +132,7 @@ int main(int argc, char** argv)
 	/************************************************************************/
 	/* SFML Engine init														*/
 	/************************************************************************/
-	sf::RenderWindow window(sf::VideoMode(sf::VideoMode::getDesktopMode().width, sf::VideoMode::getDesktopMode().height), "Onrakish: Early Dev", (sf::Style::Titlebar, sf::Style::Close, sf::Style::Fullscreen));
+	sf::RenderWindow window(sf::VideoMode(sf::VideoMode::getDesktopMode().width, sf::VideoMode::getDesktopMode().height), "Onrakish: Early Dev", (sf::Style::Fullscreen));
 	//sf::RenderWindow window(sf::VideoMode(1280, 720), "Onrakish: Early Dev", (sf::Style::Titlebar, sf::Style::Close));
 	//window.setFramerateLimit(60);
 	window.setVerticalSyncEnabled(true);
@@ -141,6 +141,7 @@ int main(int argc, char** argv)
 
 	//Camera init
 	sf::View camera(window.getDefaultView());
+	camera.move(0, 0);
 	window.setView(camera);
 
 
@@ -189,10 +190,23 @@ int main(int argc, char** argv)
 	tmx::MapLoader ml("maps/");
 	ml.Load(gameSession.mapFileName);
 
+	sf::Vector2u screenSize = ml.GetMapSize();
+
 	std::vector<tmx::MapLayer> layers;
 	layers = ml.GetLayers();
 
 	std::vector<tmx::MapTile> &tiles = layers[0].tiles;
+
+	sf::Vector2f coor = convertToMap(layers[1].objects[0].GetPosition().x, layers[1].objects[0].GetPosition().y);
+	sf::Vector2f coor2 = convertToMap(layers[1].objects[1].GetPosition().x, layers[1].objects[1].GetPosition().y);
+
+	puts(LOG("Object: " + to_string(coor.x - 1) + "x" + to_string(coor.y - 1) + ", belong to player " + layers[1].objects[0].GetPropertyString("player")).c_str());
+	puts(LOG("Object: " + to_string(coor2.x - 1) + "x" + to_string(coor2.y - 1) + ", belong to player " + layers[1].objects[1].GetPropertyString("player")).c_str());
+
+	//for(std::vector<tmx::MapTile>::iterator it = tiles.begin(); it != tiles.end(); ++it)
+	//{
+	//	tmx::MapTile& tile = *it;
+	//}
 
 
 	/************************************************************************/
@@ -225,10 +239,11 @@ int main(int argc, char** argv)
 	sf::Sprite defaultPointer = sf::Sprite(pointerTexture);
 
 	sf::Sprite selectedTilePointer = sf::Sprite(pointerTexture);
-	sf::Vector2i selectedTile;
+	//Hide on start
+	selectedTilePointer.move(0, -TILE_HEIGHT * 2);
+	sf::Vector2i selectedTile(-1, -1);
 
 	//Click sound
-
 	sf::SoundBuffer clickBuffer;
 	if (!clickBuffer.loadFromFile("sfx/click.wav")) return -1;
 
@@ -263,55 +278,56 @@ int main(int argc, char** argv)
 			if(event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Space)
 				sendMessage(MESSAGE_END_TURN);
 			if (event.type == sf::Event::MouseButtonReleased)
-			{
-				selectedTilePointer.setPosition(defaultPointer.getPosition());
-				selectedTile = convertMouseToMap(window, cameraX, cameraY);
-				selectedTileDebugString = "Selected tile position: " + to_string(selectedTile.x) + "x" + to_string(selectedTile.y);
-				sound.play();
+			{	
+				selectedTile = convertMouseToMap(window);
+				
+				if (selectedTile.x >= 0 && selectedTile.y >= 0 && selectedTile.y <= (ml.GetMapSize().y / TILE_HEIGHT) - 1 && selectedTile.x <= (ml.GetMapSize().x / TILE_WIDTH) - 1)
+				{
+					selectedTileDebugString = "Selected tile position: " + to_string(selectedTile.x) + "x" + to_string(selectedTile.y);
+					selectedTilePointer.setPosition(defaultPointer.getPosition());
+					sound.play();
+				}
 			}
 		}
+
 		
-		
-		/************************************************************************/
-		/* Drawing                                                              */
-		/************************************************************************/
-		window.clear();
-		ml.Draw(window, false);
-
-		//for(std::vector<tmx::MapTile>::iterator it = tiles.begin(); it != tiles.end(); ++it)
-		//{
-		//	tmx::MapTile& tile = *it;
-		//}
-
-		sf::Vector2i pointerVector = convertMouseToMap(window, cameraX, cameraY);
-		sf::Vector2f newPos = convertToScreen(pointerVector.x, pointerVector.y);
-		newPos.y -= TILE_HEIGHT / 2;
-		defaultPointer.setPosition(newPos);
-
-		pointerPositionDebugString = "Pointer position: " + to_string(pointerVector.x) + "x" + to_string(pointerVector.y);
-
-		debug.draw(window, cameraX, cameraY);
-		window.draw(defaultPointer);
-		window.draw(selectedTilePointer);
-
-
 		/************************************************************************/
 		/* Scrolling                                                            */
 		/************************************************************************/
 		float deltaTime = deltaClock.restart().asSeconds();
 		pixelPos = sf::Mouse::getPosition(window);
 
-		if (pixelPos.x <= 0) 
+		if (pixelPos.x <= 0 && -cameraX <= screenSize.x / 2)
 			cameraX -= SCROLL_SPEED * deltaTime;
-		if (pixelPos.x >= window.getSize().x - 1) 
+		if (pixelPos.x >= window.getSize().x - 1 && cameraX + window.getSize().x <= (screenSize.x / 2))
 			cameraX += SCROLL_SPEED * deltaTime;
-		if (pixelPos.y <= 0) 
+		if (pixelPos.y == 0 && cameraY >= 1) 
 			cameraY -= SCROLL_SPEED * deltaTime;
-		if (pixelPos.y >= window.getSize().y - 1) 
+		if (pixelPos.y >= window.getSize().y - 1 && cameraY + window.getSize().y <= screenSize.y) 
 			cameraY += SCROLL_SPEED * deltaTime;
 
 		camera.reset(sf::FloatRect(cameraX, cameraY, window.getSize().x, window.getSize().y));
 		window.setView(camera);
+
+		
+		/************************************************************************/
+		/* Drawing                                                              */
+		/************************************************************************/
+		window.clear();
+		
+		ml.Draw(window, true, defaultPointer, selectedTilePointer);
+		debug.draw(window, cameraX, cameraY);
+
+		sf::Vector2i pointerVector = convertMouseToMap(window);
+		
+		if (pointerVector.x >= 0 && pointerVector.y >= 0 && pointerVector.y <= (ml.GetMapSize().y / TILE_HEIGHT) - 1 && pointerVector.x <= (ml.GetMapSize().x / TILE_WIDTH) - 1) 
+		{
+			//window.draw(defaultPointer);
+			sf::Vector2f newPos = convertToScreen(pointerVector.x, pointerVector.y);
+			defaultPointer.setPosition(newPos);
+			pointerPositionDebugString = "Pointer position: " + to_string(pointerVector.x) + "x" + to_string(pointerVector.y) + ", mouse coords are " + to_string(window.mapPixelToCoords(sf::Mouse::getPosition(window)).x) + "x" + to_string(window.mapPixelToCoords(sf::Mouse::getPosition(window)).y);
+		}
+		//window.draw(selectedTilePointer);
 
 		window.display();
 	}

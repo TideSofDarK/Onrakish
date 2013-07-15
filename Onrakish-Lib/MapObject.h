@@ -82,13 +82,17 @@ namespace tmx
 		//returns precomputed centre of mass, or zero for polylines
 		const sf::Vector2f GetCentre(void) const {return m_centrePoint;};
 		//returns the type of shape of the object
-		const MapObjectShape GetShapeType(void){return m_shape;};
+		const MapObjectShape GetShapeType(void) const {return m_shape;};
 		//returns and object's name
-		const std::string GetName(void) const { return m_name;};
+		const std::string GetName(void) const {return m_name;};
 		//returns the object's type
 		const std::string GetType(void) const {return m_type;};
+		//returns the name of the object's parent layer
+		const std::string GetParent(void) const {return m_parent;};
 		//returns the object's rotation in degrees
 		const float GetRotation(void) const {return m_rotation;};
+		//returns the objects AABB in world coordinates
+		const sf::FloatRect GetAABB(void) const {return m_AABB;};
 		//returns visibility
 		const bool Visible(void) const {return m_visible;}
 		//sets a property value, or adds it if property doesn't exist
@@ -104,6 +108,8 @@ namespace tmx
 		void SetName(const std::string name){m_name = name;}
 		//sets the object's type
 		void SetType(const std::string type){m_type = type;};
+		//sets the name of the object's parent layer
+		void SetParent(const std::string parent){m_parent = parent;};
 		//sets the rotation of the object in degrees
 		void SetRotation(const float angle)
 		{
@@ -113,7 +119,8 @@ namespace tmx
 		void SetShapeType(MapObjectShape shape){m_shape = shape;};
 		//sets visibility
 		void SetVisible(bool visible){m_visible = visible;};
-		//adds a point to the list of polygonal points.
+		//adds a point to the list of polygonal points. If calling this manually
+		//call CreateDebugShape() afterwards to rebuild debug output
 		void AddPoint(const sf::Vector2f point){m_polypoints.push_back(point);};
 
 		//checks if an object contains given point in world coords.
@@ -168,6 +175,9 @@ namespace tmx
 		//creates a shape used for debug drawing
 		void CreateDebugShape(const sf::Color colour)
 		{
+			//reset any existing shapes incase new points have been added
+			m_debugShape.clear();
+			
 			//draw poly points
 			for(auto i = m_polypoints.cbegin(); i != m_polypoints.cend(); ++i)
 				m_debugShape.append(sf::Vertex(*i + m_position, colour));
@@ -180,6 +190,9 @@ namespace tmx
 
 			//precompute shape values for intersection testing
 			m_CalcTestValues();
+
+			//create the AABB for quad tree testing
+			m_CreateAABB();
 		}
 		//draws debug shape to given target
 		void DrawDebugShape(sf::RenderTarget& rt)
@@ -190,9 +203,10 @@ namespace tmx
 			text.setColor(sf::Color::Black);
 			rt.draw(text);
 		}
-	private:
+	
+private:
 		//object properties, reflects those which are part of the tmx format
-		std::string m_name, m_type;
+		std::string m_name, m_type, m_parent; //parent is name of layer to which object belongs
 		//sf::FloatRect m_rect; //width / height property of object plus position in world space
 		sf::Vector2f m_position, m_size;
 		std::map <std::string, std::string> m_properties;//map of custom name/value properties
@@ -204,6 +218,11 @@ namespace tmx
 		sf::Font m_debugFont;
 		sf::Vector2f m_centrePoint;
 		float m_furthestPoint; //furthest distance from centrePoint to vertex - used for intersection testing
+		//AABB created from polygonal shapes, used for adding MapObjects to a QuadTreeNode.
+		//Note that the position of this box many not necessarily match the MapObject's position, as polygonal
+		//points may have negative values relative to the object's world position.
+		sf::FloatRect m_AABB; 
+
 
 		//returns centre of poly shape if available, else centre of
 		//bounding rectangle
@@ -273,6 +292,36 @@ namespace tmx
 			//polyline centre ought to be half way between the start point and the furhtest vertex
 			if(m_shape == Polyline) m_furthestPoint /= 2.f;
 		}
+		//creates an AABB around the object based on its polygonal points
+		void m_CreateAABB(void)
+		{
+			if(!m_polypoints.empty())
+			{
+				m_AABB = sf::FloatRect(m_polypoints[0], m_polypoints[0]);
+				for(auto point = m_polypoints.cbegin(); point != m_polypoints.cend(); ++point)
+				{
+					if(point->x < m_AABB.left) m_AABB.left = point->x;
+					if(point->x > m_AABB.width) m_AABB.width = point->x;
+					if(point->y < m_AABB.top) m_AABB.top = point->y;
+					if(point->y > m_AABB.height) m_AABB.height = point->y;
+				}
+
+				//calc true width and height by distance between points
+				m_AABB.width -= m_AABB.left;
+				m_AABB.height -= m_AABB.top;
+
+				//offset into world position
+				m_AABB.left += m_position.x;
+				m_AABB.top += m_position.y;
+
+
+				//debug draw AABB
+				//m_debugShape.append(sf::Vector2f(m_AABB.left, m_AABB.top));
+				//m_debugShape.append(sf::Vector2f(m_AABB.left + m_AABB.width, m_AABB.top));
+				//m_debugShape.append(sf::Vector2f(m_AABB.left + m_AABB.width, m_AABB.top + m_AABB.height));
+				//m_debugShape.append(sf::Vector2f(m_AABB.left, m_AABB.top + m_AABB.height));
+			}
+		};
 	};
 
 	//represents a single tile on a layer
@@ -307,6 +356,7 @@ namespace tmx
 		std::vector<MapObject> objects; //vector of objects if layer is object group
 		MapLayerType type;
 		std::map <std::string, std::string> properties;
+		std::vector<sf::VertexArray> vertexArrays;
 	};
 };
 

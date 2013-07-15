@@ -29,7 +29,7 @@ it freely, subject to the following restrictions:
 #ifndef MAP_LOADER_H_
 #define MAP_LOADER_H_
 
-#include <MapObject.h>
+#include <QuadTreeNode.h>
 #include <iostream>
 #include <pugixml/pugixml.hpp>
 
@@ -49,22 +49,42 @@ namespace tmx
 		~MapLoader();
 		//loads a given tmx file, returns false on failure
 		const bool Load(std::string mapFile);
+		//updates the map's quad tree. Not necessary when not querying the quad tree
+		//root area is the are covered by root node, for example the screen size
+		void UpdateQuadTree(const sf::FloatRect& rootArea);
+		//queries the quad tree and returns a vector of objects contained by nodes enclosing
+		//or intersecting testArea
+		std::vector<MapObject*> QueryQuadTree(const sf::FloatRect& testArea);
 		//returns a vector of map layers
 		std::vector<MapLayer>& GetLayers(void) {return m_layers;};
 		//draws visible tiles to given target, optionally draw outline of objects for debugging
-		void Draw(sf::RenderTarget& rt, bool debug = false);
+		//along with any quadTree debug bounds. Uses vertex arrays for performance
+		void Draw(sf::RenderTarget& rt, bool debug, sf::Sprite &pointer, sf::Sprite &selectedTilePointer);
+		//legacy draw method which draws each tile as a separate sprite
+		void Draw2(sf::RenderTarget& rt, bool debug = false);
 		//projects orthogonal world coords to isometric world coords if available, else return original value
 		//eg: use to convert an isometric world coordinate to a position to be drawn in view space
 		const sf::Vector2f IsometricToOrthogonal(const sf::Vector2f& projectedCoords);
 		//returns orthogonal world coords from projected coords
 		//eg: use to find the orthogonal world coordinates currently under the mouse cursor
 		const sf::Vector2f OrthogonalToIsometric(const sf::Vector2f& worldCoords);
+		//returns the map size in pixels
+		const sf::Vector2u GetMapSize(void) const{return sf::Vector2u(m_width * m_tileWidth, m_height * m_tileHeight);};
+		//returns empty string if property not found
+		const std::string GetPropertyString(std::string name)
+		{
+			if(m_properties.find(name) != m_properties.end())
+				return m_properties[name];
+			else
+				return std::string();
+		}
 	private:
 		//properties which correspond to tmx
 		sf::Uint16 m_width, m_height; //tile count
 		sf::Uint16 m_tileWidth, m_tileHeight; //width / height of tiles
 		MapOrientation m_orientation;
 		float m_tileRatio; //width / height ratio of isometric tiles
+		std::map<std::string, std::string> m_properties;
 
 		sf::FloatRect m_bounds; //bounding area of tiles visible on screen
 		std::string m_mapDirectory; //directory relative to executable containing map files and images
@@ -72,9 +92,26 @@ namespace tmx
 		std::vector<MapLayer> m_layers; //layers of map, including image and object layers
 		std::vector<sf::Texture> m_tileTextures;
 		std::vector<sf::Texture> m_imageLayerTextures;
+		std::vector<sf::Texture> m_tilesetTextures; //textures created from complete sets used when drawing vertex arrays
+		struct TileInfo //holds texture coords and tileset id of a tile
+		{
+			sf::Vector2f Coords[4], Size;
+			sf::Uint16 TileSetId;
+			TileInfo() : TileSetId(0){};
+			TileInfo(const sf::IntRect& rect, const sf::Vector2f& size, sf::Uint16 tilesetId) : Size(size), TileSetId(tilesetId)
+			{
+				Coords[0] = sf::Vector2f(static_cast<float>(rect.left), static_cast<float>(rect.top));
+				Coords[1] = sf::Vector2f(static_cast<float>(rect.left + rect.width), static_cast<float>(rect.top));
+				Coords[2] = sf::Vector2f(static_cast<float>(rect.left + rect.width), static_cast<float>(rect.top + rect.height));
+				Coords[3] = sf::Vector2f(static_cast<float>(rect.left), static_cast<float>(rect.top + rect.height));
+			}
+		};
+		std::vector<TileInfo> m_tileInfo; //stores information on all the tilesets for creating vertex arrays
 
 		sf::VertexArray m_gridVertices; //used to draw map grid in debug
-		bool m_mapLoaded;
+		bool m_mapLoaded, m_quadTreeAvailable;
+		//root node for quad tree partition
+		QuadTreeRoot m_rootNode;
 
 		//resets any loaded map properties
 		void m_Unload(void);
