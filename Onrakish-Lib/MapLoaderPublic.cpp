@@ -66,8 +66,6 @@ const bool MapLoader::Load(std::string map)
 	pugi::xml_parse_result result = mapDoc.load_file(map.c_str());
 	if(!result)
 	{
-		std::cout << "Failed to open " << map << std::endl;
-		std::cout << "Reason: " << result.description() << std::endl;
 		return m_mapLoaded = false;
 	}
 
@@ -75,7 +73,6 @@ const bool MapLoader::Load(std::string map)
 	pugi::xml_node mapNode = mapDoc.child("map");
 	if(!mapNode)
 	{
-		std::cout << "Map node not found. Map " << map << " not loaded." << std::endl;
 		return m_mapLoaded = false;
 	}
 	if(!(m_mapLoaded = m_ParseMapNode(mapNode))) return false;
@@ -118,9 +115,6 @@ const bool MapLoader::Load(std::string map)
 	}
 
 	m_CreateDebugGrid();
-
-	std::cout << "Parsed " << m_layers.size() << " layers." << std::endl;
-	std::cout << "Loaded " << map << " successfully." << std::endl;
 
 	return m_mapLoaded = true;
 }
@@ -188,15 +182,18 @@ void MapLoader::Draw(sf::RenderTarget& rt, bool debug, sf::Sprite &pointer, sf::
 		}
 		if(layer->type == ObjectGroup || layer->type == ImageLayer)
 		{
+			rt.draw(pointer);
+			rt.draw(selectedTilePointer);
+
 			//draw tiles used on objects
 			for(auto tile = layer->tiles.begin(); tile != layer->tiles.end(); ++tile)
 			{
-				//draw tile if in bounds and is not transparent
+				tile->sprite.setPosition(layer->objects[tile - layer->tiles.begin()].GetPosition().x - (tile->sprite.getTexture()->getSize().x / 2), layer->objects[tile - layer->tiles.begin()].GetPosition().y - tile->sprite.getTexture()->getSize().y);
+				tile->gridCoord = sf::Vector2i(static_cast<int>(layer->objects[tile - layer->tiles.begin()].GetPosition().x / m_tileWidth), static_cast<int>(layer->objects[tile - layer->tiles.begin()].GetPosition().y / m_tileHeight));
+
 				if((m_bounds.contains(tile->sprite.getPosition()) && tile->sprite.getColor().a)
 					|| layer->type == ImageLayer) //always draw image layer
-				{
-					rt.draw(pointer);
-					rt.draw(selectedTilePointer);
+				{		
 					rt.draw(tile->sprite, tile->renderStates);
 				}
 			}

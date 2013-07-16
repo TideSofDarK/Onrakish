@@ -28,6 +28,8 @@ sf::TcpListener listener;
 sf::SocketSelector selector;
 static sf::Mutex globalMutex;
 
+static sf::Uint64 id = 1;
+
 //Game variables
 NetworkGameSession gameSession;
 
@@ -42,9 +44,9 @@ int getRandomInt(int max, int min)
 
 sf::Uint64 getUniqueId()
 {
-	static sf::Uint64 id = 1;
+	static sf::Mutex mutex;
 
-	sf::Lock lock(globalMutex);
+	sf::Lock lock(mutex);
 	return id++;
 }
 
@@ -104,17 +106,52 @@ void handleClient(ClientInfo *client)
 							break;
 						}
 						break;
+
 					case MESSAGE_GAME_SESSION_REQUEST:
 						sendPacket << gameSession;
 						client->socket->send(sendPacket);
 						break;
+
 					case MESSAGE_END_TURN:
-						if (gameSession.turnPlayerID == client->id)
+						if (gameSession.state == GAME_STATE_GAME)
 						{
-							puts(logger.log("Player " + client->name + ":" + to_string(client->id) + " with IP " + client->socket->getRemoteAddress().toString() + " ended his turn").c_str());
-							gameSession.turnPlayerID = 2;
-						}
+							puts(logger.log("Received \"end turn\" info").c_str());
+							if (gameSession.turnPlayerID == client->id)
+							{
+								puts(logger.log("Player " + client->name + ":" + to_string(client->id) + " with IP " + client->socket->getRemoteAddress().toString() + " ended his turn").c_str());
+
+								if (gameSession.turnPlayerID + 1 > gameSession.clients->size())
+								{
+									gameSession.turnPlayerID = 1;
+								}
+								else
+								{
+									gameSession.turnPlayerID++;
+								}	
+								
+								for(std::list<ClientInfo*>::iterator it = gameSession.clients->begin(); it != gameSession.clients->end();	++it)
+								{
+									ClientInfo &client = **it;
+
+									if (client.id == gameSession.turnPlayerID)
+									{
+										puts(logger.log("Next turn: " + client.name + ":" + to_string(client.id)).c_str());
+									}
+
+									sendPacket.clear();
+
+									sendPacket << MESSAGE_UPDATE_TURN_DATA;
+									client.socket->send(sendPacket);
+
+									sendPacket.clear();
+
+									sendPacket << gameSession.turnPlayerID;
+									client.socket->send(sendPacket);
+								}
+							}
+						}	
 						break;
+					
 					default:
 						break;
 					}
@@ -147,15 +184,13 @@ void handleClients(void)
 					newClient->socket->receive(receivePacket);
 					ClientInfo receivedInfo;
 					receivePacket >> receivedInfo;
-					newClient->name = receivedInfo.name;
-					newClient->id = getUniqueId();
+					newClient->name = receivedInfo.name;		
 
 					gameSession.clients->push_back(newClient);
 					selector.add(*newClient->socket);
-
+					
+					gameSession.clients->back()->id = getUniqueId();
 					gameSession.clients->back()->name = receivedInfo.name;
-
-					//gameSession.clients->sort();
 
 					sf::Thread* thread = 0;
 					thread = new sf::Thread(&handleClient, gameSession.clients->back());
@@ -261,18 +296,33 @@ int main(int argc, char** argv)
 		else if (command == "start" && gameSession.clients->size() == atoi(ml.GetPropertyString("players").c_str()))
 		{
 			globalMutex.lock();
+			int newID = 0;
 			for(std::list<ClientInfo*>::iterator it = gameSession.clients->begin(); it != gameSession.clients->end();	++it)
 			{
+				newID++;
+
 				ClientInfo *client = *it;
+				client->id = newID;
 				client->state = CLIENT_STATE_GAME;
-				puts(logger.log(client->name + " is ready to play!").c_str());
+				puts(logger.log(client->name + " is ready to play! New ID is " + to_string(client->id)).c_str());
 				
 				sf::Packet sendPacket;
 				if (sendPacket << MESSAGE_START_GAME)
 				{
 					client->socket->send(sendPacket);
+					sendPacket.clear();
+					if (sendPacket << *client)
+					{
+						client->socket->send(sendPacket);
+						sendPacket.clear();
+						if (sendPacket << gameSession.turnPlayerID)
+						{
+							client->socket->send(sendPacket);
+						}
+					}
 				}
 			}
+			gameSession.state = GAME_STATE_GAME;
 			puts(logger.log("Battle begins!").c_str());
 			globalMutex.unlock();
 		}

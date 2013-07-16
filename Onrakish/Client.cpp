@@ -21,6 +21,7 @@
 #include <TileMapUtil.h>
 #include <Debugger.h>
 #include <Message.h>
+#include <Units.h>
 
 using namespace TCLAP;
 using namespace std;
@@ -37,6 +38,7 @@ sf::IpAddress ipAddress;
 
 /* Game variables */
 GameSession gameSession;
+std::vector<tmx::MapObject> objects;
 
 float cameraX, cameraY;
 
@@ -84,9 +86,38 @@ void handleServer()
 				switch (msg)
 				{
 				case MESSAGE_START_GAME:
+					receivePacket.clear();
+
+					//Receive updated client info
+					if (server.receive(receivePacket) == sf::Socket::Done)
+					{
+						ClientInfo ci;
+						if (receivePacket >> ci)
+						{
+							clientInfo = ci;
+							receivePacket.clear();
+							//Receive current turn
+							if (server.receive(receivePacket) == sf::Socket::Done)
+							{
+								receivePacket >> gameSession.turnPlayerID;
+							}
+						}
+					}
 					gameSession.state = GAME_STATE_GAME;
-					puts(LOG("Game started!").c_str());
+					puts(LOG("Game started! New player number (ID) is " + to_string(clientInfo.id)).c_str());
 					break;
+
+				case MESSAGE_UPDATE_TURN_DATA:
+					receivePacket.clear();
+					if (server.receive(receivePacket) == sf::Socket::Done)
+					{
+						receivePacket >> gameSession.turnPlayerID;
+						if (gameSession.turnPlayerID == clientInfo.id) puts(LOG("It's your turn!").c_str());
+						else puts(LOG("Waiting...").c_str());
+					}
+								
+					break;
+
 				default:
 					break;
 				}
@@ -192,22 +223,27 @@ int main(int argc, char** argv)
 
 	sf::Vector2u screenSize = ml.GetMapSize();
 
-	std::vector<tmx::MapLayer> layers;
-	layers = ml.GetLayers();
+	std::vector<tmx::MapLayer> layers = ml.GetLayers();
 
-	std::vector<tmx::MapTile> &tiles = layers[0].tiles;
+	//std::vector<tmx::MapTile> &tiles = layers[0].tiles;
 
-	sf::Vector2f coor = convertToMap(layers[1].objects[0].GetPosition().x, layers[1].objects[0].GetPosition().y);
-	sf::Vector2f coor2 = convertToMap(layers[1].objects[1].GetPosition().x, layers[1].objects[1].GetPosition().y);
+	//sf::Vector2f coor = convertToMap(layers[1].objects[0].GetPosition().x, layers[1].objects[0].GetPosition().y);
+	//sf::Vector2f coor2 = convertToMap(layers[1].objects[1].GetPosition().x, layers[1].objects[1].GetPosition().y);
 
-	puts(LOG("Object: " + to_string(coor.x - 1) + "x" + to_string(coor.y - 1) + ", belong to player " + layers[1].objects[0].GetPropertyString("player")).c_str());
-	puts(LOG("Object: " + to_string(coor2.x - 1) + "x" + to_string(coor2.y - 1) + ", belong to player " + layers[1].objects[1].GetPropertyString("player")).c_str());
+	//puts(LOG("Object: " + to_string(coor.x - 1) + "x" + to_string(coor.y - 1) + ", belong to player " + layers[1].objects[0].GetPropertyString("player")).c_str());
+	//puts(LOG("Object: " + to_string(coor2.x - 1) + "x" + to_string(coor2.y - 1) + ", belong to player " + layers[1].objects[1].GetPropertyString("player")).c_str());
 
-	//for(std::vector<tmx::MapTile>::iterator it = tiles.begin(); it != tiles.end(); ++it)
-	//{
-	//	tmx::MapTile& tile = *it;
-	//}
-
+	for(std::vector<tmx::MapLayer>::iterator it = ml.GetLayers().begin(); it != ml.GetLayers().end(); ++it)
+	{
+		tmx::MapLayer& layer = *it;
+		for(std::vector<tmx::MapObject>::iterator i = layer.objects.begin(); i != layer.objects.end(); ++i)
+		{
+			tmx::MapObject& object = *i;
+			//i->SetPosition(sf::Vector2f(0, 256));
+			puts(LOG(to_string(object.GetPosition().x) + "x" + to_string(object.GetPosition().y)).c_str());
+			puts(LOG(object.GetName()).c_str());
+		}
+	}
 
 	/************************************************************************/
 	/* Debugger setup														*/
@@ -215,11 +251,13 @@ int main(int argc, char** argv)
 
 	std::list<std::string*> strs;
 	std::string fpsDebugString = "";
+	std::string gameVariablesDebugString = "";
 	std::string pointerPositionDebugString = "";
 	std::string selectedTileDebugString = "";
 	std::string gameStateDebugString = "";
 
 	strs.push_back(&fpsDebugString);
+	strs.push_back(&gameVariablesDebugString);
 	strs.push_back(&pointerPositionDebugString);
 	strs.push_back(&gameStateDebugString);
 	strs.push_back(&selectedTileDebugString);
@@ -263,6 +301,9 @@ int main(int argc, char** argv)
 
 		fpsDebugString = "FPS: " + to_string((int)(getFPS(FPSClock.restart())));
 
+		if (gameSession.state == GAME_STATE_GAME) gameVariablesDebugString = "Your ID is " + to_string(clientInfo.id) + ", current turn is " + to_string(gameSession.turnPlayerID);
+		else gameVariablesDebugString = "Game not started";
+
 		if (gameSession.state == GAME_STATE_GAME) gameStateDebugString = "[Game state]";
 		else gameStateDebugString = "[Lobby state]";
 
@@ -275,8 +316,6 @@ int main(int argc, char** argv)
 				quit = true;
 			if(event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Escape)
 				quit = true;
-			if(event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Space)
-				sendMessage(MESSAGE_END_TURN);
 			if (event.type == sf::Event::MouseButtonReleased)
 			{	
 				selectedTile = convertMouseToMap(window);
@@ -287,6 +326,33 @@ int main(int argc, char** argv)
 					selectedTilePointer.setPosition(defaultPointer.getPosition());
 					sound.play();
 				}
+			}
+			if (gameSession.state == GAME_STATE_GAME && objectClicked(window, layers[1].objects[clientInfo.id - 1]))
+			{
+				puts(LOG("Object clicked: " + layers[1].objects[clientInfo.id - 1].GetName()).c_str());
+			}
+
+			//Only if it's turn
+			if (gameSession.turnPlayerID == clientInfo.id)
+			{
+				if(gameSession.state == GAME_STATE_GAME && event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Space)
+				{
+					puts(LOG("Turn sent").c_str());
+					sendMessage(MESSAGE_END_TURN);
+				}
+
+				tmx::MapObject &obj = ml.GetLayers()[1].objects.front();
+
+				if(gameSession.state == GAME_STATE_GAME && event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Up)
+					moveObject(obj, DIR_TOP_LEFT);
+				if(gameSession.state == GAME_STATE_GAME && event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Right)
+					moveObject(obj, DIR_TOP_RIGHT);
+				if(gameSession.state == GAME_STATE_GAME && event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Down)
+				{
+					moveObject(obj, DIR_BOT_RIGHT);
+				}
+				if(gameSession.state == GAME_STATE_GAME && event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Left)
+					moveObject(obj, DIR_BOT_LEFT);
 			}
 		}
 
@@ -322,12 +388,10 @@ int main(int argc, char** argv)
 		
 		if (pointerVector.x >= 0 && pointerVector.y >= 0 && pointerVector.y <= (ml.GetMapSize().y / TILE_HEIGHT) - 1 && pointerVector.x <= (ml.GetMapSize().x / TILE_WIDTH) - 1) 
 		{
-			//window.draw(defaultPointer);
 			sf::Vector2f newPos = convertToScreen(pointerVector.x, pointerVector.y);
 			defaultPointer.setPosition(newPos);
 			pointerPositionDebugString = "Pointer position: " + to_string(pointerVector.x) + "x" + to_string(pointerVector.y) + ", mouse coords are " + to_string(window.mapPixelToCoords(sf::Mouse::getPosition(window)).x) + "x" + to_string(window.mapPixelToCoords(sf::Mouse::getPosition(window)).y);
 		}
-		//window.draw(selectedTilePointer);
 
 		window.display();
 	}
