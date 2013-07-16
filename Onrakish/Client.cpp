@@ -22,6 +22,7 @@
 #include <Debugger.h>
 #include <Message.h>
 #include <Units.h>
+#include <TurnData.h>
 
 using namespace TCLAP;
 using namespace std;
@@ -38,7 +39,11 @@ sf::IpAddress ipAddress;
 
 /* Game variables */
 GameSession gameSession;
-std::vector<tmx::MapObject> objects;
+tmx::MapLoader ml("maps/");
+//Pointers to player's objects on map
+std::vector<tmx::MapObject*> playerObjects;
+tmx::MapObject* selectedObject;
+static TurnData turnData;
 
 float cameraX, cameraY;
 
@@ -86,6 +91,7 @@ void handleServer()
 				switch (msg)
 				{
 				case MESSAGE_START_GAME:
+					globalMutex.lock();
 					receivePacket.clear();
 
 					//Receive updated client info
@@ -104,18 +110,56 @@ void handleServer()
 						}
 					}
 					gameSession.state = GAME_STATE_GAME;
+
+					//Set objects
+					if (playerObjects.size() == 0)
+					{
+						for(std::vector<tmx::MapObject>::iterator i = ml.GetLayers()[1].objects.begin(); i != ml.GetLayers()[1].objects.end(); ++i)
+						{
+							tmx::MapObject& object = *i;
+							if (object.GetPropertyString("player") == to_string(clientInfo.id))
+							{
+								playerObjects.push_back(&object);
+							}
+						}
+					}	
+
 					puts(LOG("Game started! New player number (ID) is " + to_string(clientInfo.id)).c_str());
+					globalMutex.unlock();
 					break;
 
 				case MESSAGE_UPDATE_TURN_DATA:
+					globalMutex.lock();
 					receivePacket.clear();
 					if (server.receive(receivePacket) == sf::Socket::Done)
 					{
 						receivePacket >> gameSession.turnPlayerID;
 						if (gameSession.turnPlayerID == clientInfo.id) puts(LOG("It's your turn!").c_str());
 						else puts(LOG("Waiting...").c_str());
+
+						//Receive turn data
+						receivePacket.clear();
+						if (server.receive(receivePacket) == sf::Socket::Done)
+						{
+							string td;
+							receivePacket >> td;
+							if (parseTurnData(td).toString() == td)
+							{
+								puts(logger.log("Successfully parsed!").c_str());
+								applyTurnData(parseTurnData(td), ml.GetLayers()[1].objects);
+							}
+						}
 					}
-								
+					globalMutex.unlock();
+					break;
+
+				case MESSAGE_TURN_DATA_REQUEST:
+					globalMutex.lock();
+					sendPacket << turnData.toString();
+					server.send(sendPacket);
+					//Clear turn data before next turn
+					turnData.moves.clear();
+					globalMutex.unlock();
 					break;
 
 				default:
@@ -218,7 +262,6 @@ int main(int argc, char** argv)
 	/************************************************************************/
 	/* Tile map																*/
 	/************************************************************************/
-	tmx::MapLoader ml("maps/");
 	ml.Load(gameSession.mapFileName);
 
 	sf::Vector2u screenSize = ml.GetMapSize();
@@ -233,17 +276,6 @@ int main(int argc, char** argv)
 	//puts(LOG("Object: " + to_string(coor.x - 1) + "x" + to_string(coor.y - 1) + ", belong to player " + layers[1].objects[0].GetPropertyString("player")).c_str());
 	//puts(LOG("Object: " + to_string(coor2.x - 1) + "x" + to_string(coor2.y - 1) + ", belong to player " + layers[1].objects[1].GetPropertyString("player")).c_str());
 
-	for(std::vector<tmx::MapLayer>::iterator it = ml.GetLayers().begin(); it != ml.GetLayers().end(); ++it)
-	{
-		tmx::MapLayer& layer = *it;
-		for(std::vector<tmx::MapObject>::iterator i = layer.objects.begin(); i != layer.objects.end(); ++i)
-		{
-			tmx::MapObject& object = *i;
-			//i->SetPosition(sf::Vector2f(0, 256));
-			puts(LOG(to_string(object.GetPosition().x) + "x" + to_string(object.GetPosition().y)).c_str());
-			puts(LOG(object.GetName()).c_str());
-		}
-	}
 
 	/************************************************************************/
 	/* Debugger setup														*/
@@ -319,7 +351,7 @@ int main(int argc, char** argv)
 			if (event.type == sf::Event::MouseButtonReleased)
 			{	
 				selectedTile = convertMouseToMap(window);
-				
+
 				if (selectedTile.x >= 0 && selectedTile.y >= 0 && selectedTile.y <= (ml.GetMapSize().y / TILE_HEIGHT) - 1 && selectedTile.x <= (ml.GetMapSize().x / TILE_WIDTH) - 1)
 				{
 					selectedTileDebugString = "Selected tile position: " + to_string(selectedTile.x) + "x" + to_string(selectedTile.y);
@@ -335,28 +367,30 @@ int main(int argc, char** argv)
 			//Only if it's turn
 			if (gameSession.turnPlayerID == clientInfo.id)
 			{
-				if(gameSession.state == GAME_STATE_GAME && event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Space)
+				if(gameSession.state == GAME_STATE_GAME && event.type == sf::Event::KeyReleased && event.key.code == sf::Keyboard::Space)
 				{
-					puts(LOG("Turn sent").c_str());
+					Move move;
+					move.unitName = playerObjects.front()->GetName();
+					move.transform = playerObjects.front()->GetPosition();
+					turnData.playerID = clientInfo.id;
+					turnData.moves.push_back(move);
 					sendMessage(MESSAGE_END_TURN);
-				}
 
-				tmx::MapObject &obj = ml.GetLayers()[1].objects.front();
+					puts(LOG("Turn sent").c_str());
+				}
 
 				if(gameSession.state == GAME_STATE_GAME && event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Up)
-					moveObject(obj, DIR_TOP_LEFT);
+					moveObject(*playerObjects.front(), DIR_TOP_LEFT);
 				if(gameSession.state == GAME_STATE_GAME && event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Right)
-					moveObject(obj, DIR_TOP_RIGHT);
+					moveObject(*playerObjects.front(), DIR_TOP_RIGHT);
 				if(gameSession.state == GAME_STATE_GAME && event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Down)
-				{
-					moveObject(obj, DIR_BOT_RIGHT);
-				}
+					moveObject(*playerObjects.front(), DIR_BOT_RIGHT);
 				if(gameSession.state == GAME_STATE_GAME && event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Left)
-					moveObject(obj, DIR_BOT_LEFT);
+					moveObject(*playerObjects.front(), DIR_BOT_LEFT);
 			}
 		}
 
-		
+
 		/************************************************************************/
 		/* Scrolling                                                            */
 		/************************************************************************/
@@ -375,17 +409,17 @@ int main(int argc, char** argv)
 		camera.reset(sf::FloatRect(cameraX, cameraY, window.getSize().x, window.getSize().y));
 		window.setView(camera);
 
-		
+
 		/************************************************************************/
 		/* Drawing                                                              */
 		/************************************************************************/
 		window.clear();
-		
+
 		ml.Draw(window, true, defaultPointer, selectedTilePointer);
 		debug.draw(window, cameraX, cameraY);
 
 		sf::Vector2i pointerVector = convertMouseToMap(window);
-		
+
 		if (pointerVector.x >= 0 && pointerVector.y >= 0 && pointerVector.y <= (ml.GetMapSize().y / TILE_HEIGHT) - 1 && pointerVector.x <= (ml.GetMapSize().x / TILE_WIDTH) - 1) 
 		{
 			sf::Vector2f newPos = convertToScreen(pointerVector.x, pointerVector.y);

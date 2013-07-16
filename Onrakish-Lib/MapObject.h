@@ -102,7 +102,7 @@ namespace tmx
 		}
 		//sets the object position in world coords
 		void SetPosition(const sf::Vector2f& position){m_position = position;  };
-		void SetPosition2(const sf::Vector2f& position, const sf::Vector2f& transform){m_position = position; CreateDebugShape(sf::Color(255, 0, 0)); };
+		void SetPosition2(const sf::Vector2f& position){m_position = position; CreateDebugShape(sf::Color(255, 0, 0)); };
 		//sets the width and height of the object
 		void SetSize(const sf::Vector2f& size){m_size = size;};
 		//sets the object's name
