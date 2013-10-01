@@ -415,7 +415,7 @@ int main(int argc, char** argv)
 		/************************************************************************/
 		window.clear();
 
-		ml.Draw(window, true, defaultPointer, selectedTilePointer);
+		ml.Draw2(window, true, defaultPointer, selectedTilePointer);
 		debug.draw(window, cameraX, cameraY);
 
 		sf::Vector2i pointerVector = convertMouseToMap(window);

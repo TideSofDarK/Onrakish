@@ -31,6 +31,6 @@ bool moveObject(tmx::MapObject &object, sf::Uint32 dir)
 		return false;
 		break;
 	}
-	object.SetPosition2(newPosition);
+	object.SetPosition(newPosition);
 	return true;
 }

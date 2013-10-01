@@ -32,14 +32,14 @@ using namespace tmx;
 
 //ctor
 MapLoader::MapLoader(const std::string mapDirectory)
-	: m_width(1u),
-	m_height(1u),
-	m_tileWidth(1u),
-	m_tileHeight(1u),
-	m_mapLoaded(false),
-	m_quadTreeAvailable(false),
-	m_mapDirectory(mapDirectory),
-	m_tileRatio(1.f)
+	: m_width			(1u),
+	m_height			(1u),
+	m_tileWidth			(1u),
+	m_tileHeight		(1u),
+	m_mapLoaded			(false),
+	m_quadTreeAvailable	(false),
+	m_mapDirectory		(mapDirectory),
+	m_tileRatio			(1.f)
 {
 	//reserve some space to help reduce reallocations
 	m_layers.reserve(10);
@@ -66,6 +66,8 @@ const bool MapLoader::Load(std::string map)
 	pugi::xml_parse_result result = mapDoc.load_file(map.c_str());
 	if(!result)
 	{
+		std::cout << "Failed to open " << map << std::endl;
+		std::cout << "Reason: " << result.description() << std::endl;
 		return m_mapLoaded = false;
 	}
 
@@ -73,6 +75,7 @@ const bool MapLoader::Load(std::string map)
 	pugi::xml_node mapNode = mapDoc.child("map");
 	if(!mapNode)
 	{
+		std::cout << "Map node not found. Map " << map << " not loaded." << std::endl;
 		return m_mapLoaded = false;
 	}
 	if(!(m_mapLoaded = m_ParseMapNode(mapNode))) return false;
@@ -116,6 +119,9 @@ const bool MapLoader::Load(std::string map)
 
 	m_CreateDebugGrid();
 
+	std::cout << "Parsed " << m_layers.size() << " layers." << std::endl;
+	std::cout << "Loaded " << map << " successfully." << std::endl;
+
 	return m_mapLoaded = true;
 }
 
@@ -139,38 +145,59 @@ std::vector<MapObject*> MapLoader::QueryQuadTree(const sf::FloatRect& testArea)
 	return m_rootNode.Retrieve(testArea);
 }
 
-void MapLoader::Draw2(sf::RenderTarget& rt, bool debug)
+void MapLoader::Draw(sf::RenderTarget& rt)
 {
-	if(!m_mapLoaded) return; //no need to log this really
-	//draw only visible tiles
 	m_SetDrawingBounds(rt.getView());
-	for(auto layer = m_layers.begin(); layer != m_layers.end(); ++layer)
+
+	for(auto&& layer : m_layers)
+		m_DrawLayer(rt, layer);
+}
+
+void MapLoader::Draw(sf::RenderTarget& rt, MapLayer::DrawType type)
+{
+	switch(type)
 	{
-		if(!layer->visible) continue; //skip invisible layers
-		for(auto tile = layer->tiles.begin(); tile != layer->tiles.end(); ++tile)
+	default:
+	case MapLayer::All:
+		Draw(rt);
+		break;
+	case MapLayer::Back:
 		{
-			//draw tile if in bounds and is not transparent
-			if((m_bounds.contains(tile->sprite.getPosition()) && tile->sprite.getColor().a)
-				|| layer->type == ImageLayer) //always draw image layer
+		//remember front of vector actually draws furthest back
+		MapLayer& layer = m_layers.front();
+		m_DrawLayer(rt, layer);
+		}
+		break;
+	case MapLayer::Front:
+		{
+		MapLayer& layer = m_layers.back();
+		m_DrawLayer(rt, layer);
+		}
+		break;
+	case MapLayer::Debug:
+		m_SetDrawingBounds(rt.getView());
+		for(auto layer : m_layers)
+		{
+			if(layer.type = ObjectGroup)
 			{
-				rt.draw(tile->sprite, tile->renderStates);
+				for(auto& object : layer.objects)		
+					object.DrawDebugShape(rt);
 			}
 		}
-		if(debug && layer->type == ObjectGroup)
-		{
-			//draw debug shapes for each object
-			for(auto object = layer->objects.begin(); object != layer->objects.end(); ++object)
-				object->DrawDebugShape(rt);
-		}
-	}
-	if(debug)
-	{
 		rt.draw(m_gridVertices);
-		m_rootNode.DebugDraw(rt);
+		//m_rootNode.DebugDraw(rt);
+		break;
 	}
 }
 
-void MapLoader::Draw(sf::RenderTarget& rt, bool debug, sf::Sprite &pointer, sf::Sprite &selectedTilePointer)
+void MapLoader::Draw(sf::RenderTarget& rt, sf::Uint16 index)
+{
+	m_SetDrawingBounds(rt.getView());
+	m_DrawLayer(rt, m_layers[index]);
+}
+
+//legacy draw function, avoid using this if possible
+void MapLoader::Draw2(sf::RenderTarget& rt, bool debug, sf::Sprite &pointer, sf::Sprite &selectedTilePointer)
 {
 	m_SetDrawingBounds(rt.getView());
 	for(auto layer = m_layers.begin(); layer != m_layers.end(); ++layer)

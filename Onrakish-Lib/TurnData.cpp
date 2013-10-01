@@ -80,7 +80,7 @@ bool applyTurnData(TurnData td, std::vector<tmx::MapObject> &objects)
 		tmx::MapObject &object = *it;
 		if (object.GetName() == td.moves.front().unitName && atoi(object.GetPropertyString("player").c_str()) == td.playerID)
 		{
-			object.SetPosition2(td.moves.front().transform);
+			object.SetPosition(td.moves.front().transform);
 		}
 	}
 	return true;
